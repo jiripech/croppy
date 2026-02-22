@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Croppy | Pro Square Crop</title>
+    <style>
+        :root { --accent: #0095f6; --bg: #000; --panel: #1a1a1a; --text: #efefef; --warn: #ff4b4b; }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, system-ui, sans-serif;
+            background: var(--bg); color: var(--text); margin: 0; overflow: hidden;
+            display: flex; flex-direction: column; height: 100vh; touch-action: none;
+        }
+
+        #drop-mask {
+            display: none; position: fixed; inset: 0; z-index: 9999;
+            background: rgba(0, 149, 246, 0.3); border: 4px dashed var(--accent);
+            align-items: center; justify-content: center; pointer-events: none;
+        }
+        body.dragging #drop-mask { display: flex; }
+
+        #drop-zone {
+            flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            cursor: pointer; text-align: center; padding: 20px;
+        }
+
+        #editor { display: none; position: relative; flex: 1; width: 100%; height: 100%; flex-direction: column; align-items: center; justify-content: center; }
+
+        .header {
+            position: absolute; top: 0; width: 100%; background: var(--panel);
+            padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; z-index: 10;
+        }
+
+        #progress-bar { position: absolute; top: 0; left: 0; height: 4px; background: var(--accent); transition: width 0.3s; z-index: 11; }
+
+        /* Constrained Viewport */
+        .canvas-container {
+            width: 90vw; height: 90vh;
+            display: flex; align-items: center; justify-content: center;
+            margin-top: 40px; /* offset for header */
+        }
+        canvas {
+            max-width: 100%; max-height: 100%;
+            object-fit: contain; cursor: move;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+        }
+
+        #finish-btn {
+            position: absolute; left: 50%; transform: translateX(-50%);
+            padding: 16px 40px; border-radius: 40px; border: none;
+            background: var(--accent); color: white; font-weight: bold; font-size: 1rem;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6); z-index: 100;
+            transition: top 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), bottom 0.4s;
+            cursor: pointer;
+        }
+        .btn-top { top: 80px; }
+        .btn-bottom { bottom: 40px; }
+
+        .hint { position: absolute; bottom: 10px; width: 100%; text-align: center; font-size: 0.65rem; color: #666; pointer-events: none; }
+        kbd { background: #333; padding: 2px 4px; border-radius: 3px; color: #aaa; }
+    </style>
+</head>
+<body>
+
+    <div id="drop-mask"><h2>DROP TO IMPORT</h2></div>
+    <div id="progress-bar" style="width: 0%"></div>
+
+    <div id="drop-zone">
+        <h1 style="color:var(--accent); font-weight:900; letter-spacing:-2px;">CROPPY</h1>
+        <div style="border: 2px dashed #444; padding: 40px; border-radius: 20px;">
+            Drag & Drop JPEGs or HEICs here
+        </div>
+        <input type="file" id="file-input" multiple accept="image/jpeg;image/heic" style="display: none;">
+    </div>
+
+    <div id="editor">
+        <div class="header">
+            <span style="font-weight: 900; color: var(--accent)">CROPPY</span>
+            <span id="file-count">0 / 0</span>
+        </div>
+        <button id="finish-btn" class="btn-top">FINISH & DOWNLOAD</button>
+        <div class="canvas-container">
+            <canvas id="canvas"></canvas>
+        </div>
+        <div class="hint">
+            <kbd>↑</kbd><kbd>↓</kbd> Nudge • <kbd>←</kbd> Undo • <kbd>→</kbd> Skip • <kbd>Enter</kbd> Save
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const editor = document.getElementById('editor');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const finishBtn = document.getElementById('finish-btn');
+        const progressBar = document.getElementById('progress-bar');
+        const fileCount = document.getElementById('file-count');
+
+        let queue = [], currentIndex = 0;
+        let currentImg = null, cropY = 0, imgW, imgH;
+        let isDragging = false, startX = 0, startY = 0, lastCropY = 0;
+
+        // --- 1. Global Event Handling ---
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(e => {
+            window.addEventListener(e, (evt) => { evt.preventDefault(); evt.stopPropagation(); });
+        });
+        window.addEventListener('dragover', () => document.body.classList.add('dragging'));
+        window.addEventListener('dragleave', (e) => { if (!e.relatedTarget) document.body.classList.remove('dragging'); });
+        window.addEventListener('drop', (e) => {
+            document.body.classList.remove('dragging');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        dropZone.onclick = () => fileInput.click();
+        fileInput.onchange = (e) => handleFiles(e.target.files);
+
+        function handleFiles(files) {
+            const valid = Array.from(files).filter(f => f.type.includes('jpeg') || f.type.includes('heic') || /\.(jpe?g|heic)$/i.test(f.name));
+            if (!valid.length) return;
+            queue = valid;
+            currentIndex = 0;
+            dropZone.style.display = 'none';
+            editor.style.display = 'flex';
+            loadCurrent();
+        }
+
+        // --- 2. Smart Detection ---
+        function detectFocusY(img) {
+            const s = 0.1, sw = Math.floor(img.width * s), sh = Math.floor(img.height * s);
+            const t = document.createElement('canvas'); t.width = sw; t.height = sh;
+            const tc = t.getContext('2d'); tc.drawImage(img, 0, 0, sw, sh);
+            const d = tc.getImageData(0, 0, sw, sh).data;
+            const rows = new Float32Array(sh);
+            for (let y = 0; y < sh; y++) {
+                for (let x = 1; x < sw; x++) {
+                    let i = (y * sw + x) * 4;
+                    rows[y] += Math.abs(d[i] - d[i-4]);
+                }
+            }
+            let bestY = 0, maxE = -1;
+            for (let y = 0; y <= sh - sw; y++) {
+                let currE = 0; for (let i = 0; i < sw; i++) currE += rows[y + i];
+                if (currE > maxE) { maxE = currE; bestY = y; }
+            }
+            return bestY / s;
+        }
+
+        // --- 3. Gestures & Navigation ---
+        const getXY = (e) => ({ x: e.touches ? e.touches[0].clientX : e.clientX, y: e.touches ? e.touches[0].clientY : e.clientY });
+
+        const onStart = (e) => {
+            isDragging = true;
+            const pt = getXY(e);
+            startX = pt.x; startY = pt.y;
+            lastCropY = cropY;
+        };
+
+        const onEnd = (e) => {
+            if (!isDragging) return;
+            isDragging = false;
+            const pt = e.changedTouches ? {x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY} : getXY(e);
+            const diffX = pt.x - startX;
+            const diffY = pt.y - startY;
+
+            // Gesture Check: If horizontal swipe is dominant
+            if (Math.abs(diffX) > 80 && Math.abs(diffX) > Math.abs(diffY)) {
+                if (diffX > 0) undo(); // Swipe Right
+                else skip(); // Swipe Left
+            }
+        };
+
+        const onMove = (e) => {
+            if (!isDragging || !currentImg) return;
+            const pt = getXY(e);
+            const rect = canvas.getBoundingClientRect();
+            const scale = imgH / rect.height;
+            const deltaY = (pt.y - startY) * scale;
+
+            cropY = Math.max(0, Math.min(imgH - imgW, lastCropY + deltaY));
+            render();
+        };
+
+        canvas.addEventListener('mousedown', onStart);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onEnd);
+        canvas.addEventListener('touchstart', onStart, {passive: false});
+        window.addEventListener('touchmove', (e) => { if(isDragging) e.preventDefault(); onMove(e); }, {passive: false});
+        window.addEventListener('touchend', onEnd);
+
+        window.onkeydown = (e) => {
+            if (!currentImg) return;
+            const step = imgH * 0.02;
+            if (e.key === 'ArrowUp') cropY = Math.max(0, cropY - step);
+            if (e.key === 'ArrowDown') cropY = Math.min(imgH - imgW, cropY + step);
+            if (e.key === 'ArrowLeft') undo();
+            if (e.key === 'ArrowRight') skip();
+            if (e.key === 'Enter') exportAndNext();
+            render();
+        };
+
+        // --- 4. Workflow ---
+        function loadCurrent() {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    if (img.width >= img.height) {
+                        alert("Skipping landscape image.");
+                        return skip();
+                    }
+                    currentImg = img; imgW = img.width; imgH = img.height;
+                    cropY = detectFocusY(img);
+                    updateUI();
+                    render();
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(queue[currentIndex]);
+        }
+
+        function render() {
+            canvas.width = imgW; canvas.height = imgH;
+            ctx.drawImage(currentImg, 0, 0);
+            ctx.fillStyle = "rgba(0,0,0,0.75)";
+            ctx.fillRect(0, 0, imgW, cropY);
+            ctx.fillRect(0, cropY + imgW, imgW, imgH - (cropY + imgW));
+            ctx.strokeStyle = "#0095f6";
+            ctx.lineWidth = imgW / 100;
+            ctx.strokeRect(0, cropY, imgW, imgW);
+
+            const centerRel = (cropY + imgW/2) / imgH;
+            finishBtn.className = centerRel < 0.5 ? 'btn-bottom' : 'btn-top';
+        }
+
+        function updateUI() {
+            progressBar.style.width = ((currentIndex + 1) / queue.length * 100) + "%";
+            fileCount.innerText = `${currentIndex + 1} / ${queue.length}`;
+        }
+
+        function undo() {
+            if (currentIndex > 0) { currentIndex--; loadCurrent(); }
+        }
+
+        function skip() {
+            if (currentIndex + 1 < queue.length) { currentIndex++; loadCurrent(); }
+            else { alert("End of batch."); location.reload(); }
+        }
+
+        finishBtn.onclick = exportAndNext;
+
+        function exportAndNext() {
+            const out = document.createElement('canvas');
+            out.width = imgW; out.height = imgW;
+            out.getContext('2d').drawImage(currentImg, 0, cropY, imgW, imgW, 0, 0, imgW, imgW);
+            const link = document.createElement('a');
+            link.download = queue[currentIndex].name.replace(/\.[^/.]+$/, "") + ".webp";
+            link.href = out.toDataURL('image/webp', 0.9);
+            link.click();
+            skip();
+        }
+    </script>
+</body>
+</html>
