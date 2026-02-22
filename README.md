@@ -6,13 +6,13 @@ In case you have multiple images taken by a high resolution iPhone (most probabl
 
 ## How is it done?
 
-All of the logic lives in a single [index.html](index.html) file – a compact, self‑contained web app that handles drag'n'drop import to input on [line 74](index.html#L74), smart focus detection ([line 130](index.html#130)), touch/gesture and keyboard navigation ([line 140](index.html#L140), and exports square crops as WebP.
+All of the logic lives in a single [index.html](index.html) file – a compact, self‑contained web app that handles drag'n'drop import to input on [line 74](index.html#L74), smart focus detection ([line 130](index.html#130)), touch/gesture and keyboard navigation ([line 150](index.html#L150), and exports square crops as WebP.
 
-Since it was meant for handling portrait image only, there's a check (on [line 209](index.html#L209)) to avoid accidentally dropped landscape images. If you modify it, don't forget to modify the rest of the focus handling and so on…
+Since it was meant for handling portrait images only, there's a check (on [line 209](index.html#L209)) to avoid accidentally dropped landscape images. If you modify it, don't forget to modify the rest of the focus handling, rendering and so on…
 
 ## How can I modify the script?
 
-You can fork the repository and submit a pull request (or just modify and use it according to rules described in [the License](LICENSE.txt)) so everyone can benefit from your changes…
+You can fork the repository and submit a pull request  so everyone can benefit from your changes (or just modify and use it according to rules described in [the license](LICENSE.txt)…
 
 ## How can I thank you?
 
