@@ -2,7 +2,21 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.3/dist/heic2any.min.js"></script>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="manifest" href="manifest.json">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#0095f6">
+
+    <script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(err => console.log('SW failed', err));
+        });
+    }
+    </script>
+
     <title>Croppy | Pro Square Crop</title>
     <style>
         :root { --accent: #0095f6; --bg: #000; --panel: #1a1a1a; --text: #efefef; --warn: #ff4b4b; }
@@ -201,23 +215,50 @@
         };
 
         // --- 4. Workflow ---
-        function loadCurrent() {
+        async function loadCurrent() {
+            const file = queue[currentIndex];
+            let imageBlob = file;
+
+            // 1. Handle HEIC Conversion if needed
+            if (file.type.includes('heic') || file.type.includes('heif') || /\.heic$/i.test(file.name)) {
+                try {
+                    // Show a temporary "Processing..." hint if you like
+                    fileCount.innerText = "Converting HEIC...";
+                    const convertedBlob = await heic2any({
+                        blob: file,
+                        toType: "image/jpeg",
+                        quality: 0.9
+                    });
+                    // heic2any can return an array if the HEIC has multiple layers; take the first
+                    imageBlob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+                } catch (err) {
+                    console.error("HEIC conversion failed:", err);
+                    alert("Could not convert HEIC file. Skipping.");
+                    skip();
+                    return;
+                }
+            }
+
+            // 2. Load the Blob (Original JPEG or Converted HEIC)
             const reader = new FileReader();
             reader.onload = (e) => {
                 const img = new Image();
                 img.onload = () => {
                     if (img.width >= img.height) {
-                        alert("Skipping landscape image.");
-                        return skip();
+                        alert(`"${file.name}" is not a portrait. Skipping.`);
+                        skip();
+                        return;
                     }
-                    currentImg = img; imgW = img.width; imgH = img.height;
+                    currentImg = img;
+                    imgW = img.width;
+                    imgH = img.height;
                     cropY = detectFocusY(img);
                     updateUI();
                     render();
                 };
                 img.src = e.target.result;
             };
-            reader.readAsDataURL(queue[currentIndex]);
+            reader.readAsDataURL(imageBlob);
         }
 
         function render() {
