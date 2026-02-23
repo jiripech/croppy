@@ -1,10 +1,11 @@
 {
-  "name": "Croppy Pro",
+  "name": "Croppy v1.0.0",
   "short_name": "Croppy",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#000000",
   "theme_color": "#0095f6",
+  "lang": "en",
   "icons": [
     {
       "src": "favicon.png",
