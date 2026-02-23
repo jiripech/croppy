@@ -8,11 +8,11 @@ In case you have multiple images taken by a high resolution iPhone (most probabl
 
 ## How is it done?
 
-All of the logic lives in a single [index.html](index.html) file – a compact, self‑contained web app that handles drag'n'drop import to input on [line 74](index.html#L74), smart focus detection ([line 130](index.html#L130)), touch/gesture and keyboard navigation ([line 150](index.html#L150)), and exports square crops as [WebP](https://en.wikipedia.org/wiki/WebP).
+All of the logic lives in a single [index.html](index.html) file – a compact, self‑contained web app that handles drag'n'drop import to input on [line 88](index.html#L88), smart focus detection ([line 144](index.html#L144)), touch/gesture and keyboard navigation ([line 165](index.html#L165) and following), and exports square crops as [WebP](https://en.wikipedia.org/wiki/WebP).
 
-A minimal `manifest.json` and a service worker script (`sw.js`) make the app installable and cache essential assets so it continues to run when you're offline. The service worker is registered near the top of `index.html`.
+A minimal [manifest.json](manifest.json) and a service worker script [sw.js](sw.js) make the app installable and cache essential assets so it continues to run when you're offline. The service worker is registered near the top of [index.html](index.html).
 
-Since it was meant for handling portrait images only, there's a check (on [line 209](index.html#L209)) to avoid accidentally dropped landscape images. If you modify it, don't forget to modify the rest of the focus handling, rendering and so on…
+Since it was meant for handling portrait images only, there's a check (on [line 247](index.html#L247)) to avoid accidentally dropped landscape images. If you modify it, don't forget to modify the rest of the focus handling, rendering and so on…
 
 ## How can I modify the script?
 
